@@ -1,0 +1,12 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "api_key": "Govee API Key"
+        },
+        "description": "Enter your Govee API Key. You can get this from the Govee Home app settings."
+      }
+    }
+  }
+}
