@@ -9,39 +9,61 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     api_key = hass.data[DOMAIN][entry.entry_id]
-    
-    # In a real scenario, we'd fetch these from the API if discovery worked.
-    # Since we found "BaseGroup" devices in the device list act as the shortcuts/scenes,
-    # we'll fetch the device list and filter for BaseGroup or specific scene-capable devices.
-    
     buttons = []
+
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(
+            # 1. Fetch Device List
+            resp = await client.get(
                 "https://openapi.api.govee.com/router/api/v1/user/devices",
                 headers={"Govee-API-Key": api_key},
                 timeout=10
             )
-            if response.status_code == 200:
-                devices = response.json().get("data", [])
-                for dev in devices:
-                    # Govee shortcuts/groups often appear as "BaseGroup"
-                    # or specific snapshots in the capabilities.
-                    if dev.get("sku") == "BaseGroup":
-                        buttons.append(GoveeShortcutButton(api_key, dev))
-                    
-                    # Also check for Snapshots which are common for Dreamview
-                    for cap in dev.get("capabilities", []):
-                        if cap.get("instance") == "snapshot":
+            if resp.status_code != 200:
+                _LOGGER.error("Failed to fetch devices: %s", resp.text)
+                return
+            
+            devices = resp.json().get("data", [])
+            for dev in devices:
+                sku = dev.get("sku")
+                device_id = dev.get("device")
+                device_name = dev.get("deviceName")
+
+                # Handle BaseGroups (Commonly used for Tap-to-Run style control)
+                if sku == "BaseGroup":
+                    buttons.append(GoveeShortcutButton(api_key, dev))
+                    continue
+
+                # 2. Fetch Scenes for each device
+                # The device list often has empty options for lightScene, 
+                # we need to query the dedicated endpoint.
+                scene_resp = await client.post(
+                    "https://openapi.api.govee.com/router/api/v1/device/scenes",
+                    headers={"Govee-API-Key": api_key, "Content-Type": "application/json"},
+                    json={
+                        "requestId": f"ha_scene_disc_{device_id}",
+                        "payload": {"sku": sku, "device": device_id}
+                    },
+                    timeout=10
+                )
+                
+                if scene_resp.status_code == 200:
+                    scene_data = scene_resp.json().get("payload", {})
+                    for cap in scene_data.get("capabilities", []):
+                        if cap.get("instance") in ["lightScene", "snapshot", "diyScene"]:
                             options = cap.get("parameters", {}).get("options", [])
                             for opt in options:
-                                buttons.append(GoveeSnapshotButton(api_key, dev, opt))
+                                buttons.append(GoveeSceneButton(
+                                    api_key, sku, device_id, device_name, cap["instance"], opt
+                                ))
+                
         except Exception as e:
-            _LOGGER.error("Error fetching Govee devices: %s", e)
+            _LOGGER.error("Error during Govee discovery: %s", e)
 
     async_add_entities(buttons)
 
 class GoveeShortcutButton(ButtonEntity):
+    """Buttons for BaseGroups (Group Control)."""
     def __init__(self, api_key, device_data):
         self._api_key = api_key
         self._device = device_data["device"]
@@ -68,14 +90,16 @@ class GoveeShortcutButton(ButtonEntity):
                 json=payload
             )
 
-class GoveeSnapshotButton(ButtonEntity):
-    def __init__(self, api_key, device_data, option):
+class GoveeSceneButton(ButtonEntity):
+    """Buttons for specific device scenes (Sunrise, Movie, etc)."""
+    def __init__(self, api_key, sku, device, device_name, instance, option):
         self._api_key = api_key
-        self._sku = device_data["sku"]
-        self._device = device_data["device"]
+        self._sku = sku
+        self._device = device
+        self._instance = instance
         self._value = option["value"]
-        self._attr_name = f"Govee Scene: {device_data['deviceName']} {option['name']}"
-        self._attr_unique_id = f"govee_scene_{self._device}_{self._value}"
+        self._attr_name = f"Govee Scene: {device_name} {option['name']}"
+        self._attr_unique_id = f"govee_scene_{device}_{instance}_{option['name']}"
 
     async def async_press(self) -> None:
         async with httpx.AsyncClient() as client:
@@ -86,11 +110,12 @@ class GoveeSnapshotButton(ButtonEntity):
                     "device": self._device,
                     "capability": {
                         "type": "devices.capabilities.dynamic_scene",
-                        "instance": "snapshot",
+                        "instance": self._instance,
                         "value": self._value
                     }
                 }
             }
+            _LOGGER.debug("Triggering Govee Scene: %s", payload)
             await client.post(
                 "https://openapi.api.govee.com/router/api/v1/device/control",
                 headers={"Govee-API-Key": self._api_key, "Content-Type": "application/json"},
