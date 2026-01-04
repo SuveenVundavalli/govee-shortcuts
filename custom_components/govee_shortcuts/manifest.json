@@ -1,10 +1,11 @@
 {
   "domain": "govee_shortcuts",
   "name": "Govee Shortcuts",
-  "documentation": "https://github.com/yourusername/govee_shortcuts",
+  "documentation": "https://github.com/SuveenVundavalli/govee-shortcuts",
   "dependencies": [],
-  "codeowners": ["@yourusername"],
-  "requirements": [],
+  "codeowners": ["@SuveenVundavalli"],
+  "requirements": ["httpx"],
+  "config_flow": true,
   "version": "0.1.0",
   "iot_class": "cloud_push"
 }
