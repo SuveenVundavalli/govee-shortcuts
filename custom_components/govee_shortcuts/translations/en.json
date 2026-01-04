@@ -3,9 +3,10 @@
     "step": {
       "user": {
         "data": {
-          "api_key": "Govee API Key"
+          "api_key": "Govee API Key",
+          "whitelist": "Whitelisted Scene Keywords (comma separated)"
         },
-        "description": "Enter your Govee API Key. You can get this from the Govee Home app settings."
+        "description": "Enter your Govee API Key and optional keywords to filter scenes (e.g., 'Ambient, Rainbow')."
       }
     }
   }

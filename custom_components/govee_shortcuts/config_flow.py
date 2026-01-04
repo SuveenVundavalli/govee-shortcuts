@@ -1,6 +1,6 @@
 import voluptuous as vol
 from homeassistant import config_entries
-from .const import DOMAIN, CONF_API_KEY
+from .const import DOMAIN, CONF_API_KEY, CONF_WHITELIST
 
 class GoveeShortcutsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -13,5 +13,6 @@ class GoveeShortcutsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_API_KEY): str,
+                vol.Optional(CONF_WHITELIST, default=""): str,
             }),
         )
